@@ -2,10 +2,14 @@ package com.ilya.chinesemaster;
 import android.app.Activity;
 import android.os.Bundle;
 import android.content.SharedPreferences;
+import android.content.Intent;
+import android.speech.RecognizerIntent;
+import android.speech.tts.TextToSpeech;
 import android.graphics.Color;
 import android.view.Gravity;
 import android.widget.*;
 import java.util.*;
+import java.util.Locale;
 public class MainActivity extends Activity {
     LinearLayout root;
     SharedPreferences prefs;
@@ -13,11 +17,14 @@ public class MainActivity extends Activity {
     ArrayList<Item> chars = new ArrayList<>();
     ArrayList<Item> tones = new ArrayList<>();
     Random random = new Random();
+    TextToSpeech tts;
+    Item speechTarget;
+    static final int SPEECH_REQ = 77;
     static class Item {
         String symbol, title, meaning, note;
         Item(String s, String t, String m, String n) { symbol=s; title=t; meaning=m; note=n; }
     }
-    @Override public void onCreate(Bundle b) { super.onCreate(b); prefs=getSharedPreferences("progress",MODE_PRIVATE); seedData(); showHome(); }
+    @Override public void onCreate(Bundle b) { super.onCreate(b); prefs=getSharedPreferences("progress",MODE_PRIVATE); seedData(); initSpeech(); requestAudioPermission(); showHome(); }
     TextView tv(String text, int sp, int style) {
         TextView v=new TextView(this); v.setText(text); v.setTextSize(sp); v.setTextColor(Color.rgb(30,30,30)); v.setPadding(24,14,24,14); if(style!=0)v.setTypeface(android.graphics.Typeface.DEFAULT,style); return v;
     }
@@ -53,14 +60,26 @@ public class MainActivity extends Activity {
     void showItem(Item it) {
         base(it.symbol); TextView big=tv(it.symbol,72,android.graphics.Typeface.BOLD); big.setGravity(Gravity.CENTER_HORIZONTAL); root.addView(big);
         root.addView(tv(it.title+"\nЗначение: "+it.meaning+"\n"+it.note,20,0));
-        Button hard=btn("Трудно — повторить чаще"); hard.setOnClickListener(v->{setStatus(it,"hard"); showItem(it);}); root.addView(hard);
-        Button know=btn("Знаю"); know.setOnClickListener(v->{setStatus(it,"known"); showItem(it);}); root.addView(know);
-        Button easy=btn("Легко"); easy.setOnClickListener(v->{setStatus(it,"easy"); showItem(it);}); root.addView(easy);
+        Button listen=btn("🔊 Прослушать");
+        listen.setOnClickListener(v->speakChinese(it.symbol));
+        root.addView(listen);
+
+        Button mic=btn("🎤 Произнести");
+        mic.setOnClickListener(v->practicePronunciation(it));
+        root.addView(mic);
+
+        Button hard=btn("Трудно — повторить чаще"); hard.setOnClickListener(v->{setStatus(it,"hard"); Toast.makeText(this,"Будет повторяться чаще",Toast.LENGTH_SHORT).show(); showNext(it);}); root.addView(hard);
+        Button know=btn("Знаю"); know.setOnClickListener(v->{setStatus(it,"known"); Toast.makeText(this,"Отмечено: знаю",Toast.LENGTH_SHORT).show(); showNext(it);}); root.addView(know);
+        Button easy=btn("Легко"); easy.setOnClickListener(v->{setStatus(it,"easy"); Toast.makeText(this,"Отмечено: легко",Toast.LENGTH_SHORT).show(); showNext(it);}); root.addView(easy);
         Button back=btn("← На главную"); back.setOnClickListener(v->showHome()); root.addView(back);
     }
     void showQuiz() {
         base("Тест"); ArrayList<Item> pool=all(); Item correct=pool.get(random.nextInt(pool.size())); root.addView(tv("Что означает: "+correct.symbol+" ?",28,android.graphics.Typeface.BOLD));
         ArrayList<Item> opts=new ArrayList<>(); opts.add(correct); while(opts.size()<4){ Item x=pool.get(random.nextInt(pool.size())); if(!opts.contains(x)) opts.add(x); } Collections.shuffle(opts);
+        Button listenQuiz=btn("🔊 Прослушать вопрос");
+        listenQuiz.setOnClickListener(v->speakChinese(correct.symbol));
+        root.addView(listenQuiz);
+
         for(Item o:opts){ Button b=btn(o.meaning); b.setOnClickListener(v->{ Toast.makeText(this,o==correct?"Верно ✅":"Ошибка. Правильно: "+correct.meaning,Toast.LENGTH_LONG).show(); setStatus(correct,o==correct?"known":"hard"); showQuiz(); }); root.addView(b); }
         Button back=btn("← На главную"); back.setOnClickListener(v->showHome()); root.addView(back);
     }
@@ -70,11 +89,89 @@ public class MainActivity extends Activity {
         if(n==0) root.addView(tv("Ошибок пока нет. Пройди тест или отметь сложные карточки.",18,0));
     }
     ArrayList<Item> all() { ArrayList<Item> a=new ArrayList<>(); a.addAll(radicals); a.addAll(chars); a.addAll(tones); return a; }
+    void showNext(Item it) {
+        ArrayList<Item> a = all();
+        int i = a.indexOf(it);
+        if (i >= 0 && i < a.size() - 1) showItem(a.get(i + 1));
+        else showHome();
+    }
+
     String key(Item it) { return "s_"+it.symbol+"_"+it.title; }
     String status(Item it) { return prefs.getString(key(it),"new"); }
     void setStatus(Item it,String s) { prefs.edit().putString(key(it),s).apply(); }
     int countKnown() { int c=0; for(Item it:all()) if(status(it).equals("known") || status(it).equals("easy")) c++; return c; }
-    void seedData() { radicals.clear(); chars.clear(); tones.clear();
+    
+    void requestAudioPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= 23 &&
+            checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO}, 10);
+        }
+    }
+
+    void initSpeech() {
+        tts = new TextToSpeech(this, status -> {
+            if (status == TextToSpeech.SUCCESS) {
+                tts.setLanguage(Locale.CHINESE);
+                tts.setSpeechRate(0.75f);
+            }
+        });
+    }
+
+    void speakChinese(String text) {
+        if (tts != null) {
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "zh");
+        }
+    }
+
+    void practicePronunciation(Item it) {
+        speechTarget = it;
+        speakChinese(it.symbol);
+
+        Intent intent = new
+
+
+Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN");
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "Произнеси: " + it.symbol);
+
+        try {
+            startActivityForResult(intent, SPEECH_REQ);
+        } catch(Exception e) {
+            Toast.makeText(this, "Распознавание речи недоступно на этом устройстве", Toast.LENGTH_LONG).show();
+        }
+    }
+
+     @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == SPEECH_REQ && resultCode == RESULT_OK && data != null && speechTarget != null) {
+            ArrayList<String> res = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+            String heard = res != null && res.size() > 0 ? res.get(0) : "";
+
+            int score;
+            if (heard.contains(speechTarget.symbol)) score = 100;
+            else if (heard.length() > 0) score = 50;
+            else score = 0;
+
+            Toast.makeText(this, "Распознано: " + heard + "\nОценка: " + score + "%", Toast.LENGTH_LONG).show();
+
+            if (score >= 80) setStatus(speechTarget, "known");
+            else setStatus(speechTarget, "hard");
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (tts != null) {
+            tts.stop();
+            tts.shutdown();
+        }
+        super.onDestroy();
+    }
+
+void seedData() { radicals.clear(); chars.clear(); tones.clear();
         Collections.addAll(radicals,
         new Item("⼀", "Ключ 1", "один", "Раздел: 214 ключей Канси. Запомни форму и общий смысл. Потом ищи этот компонент внутри сложных иероглифов."),
         new Item("⼁", "Ключ 2", "линия", "Раздел: 214 ключей Канси. Запомни форму и общий смысл. Потом ищи этот компонент внутри сложных иероглифов."),
