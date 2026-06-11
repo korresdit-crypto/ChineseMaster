@@ -1,0 +1,19 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.ilya.chinesemaster'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.ilya.chinesemaster'
+        minSdk 26
+        targetSdk 36
+        versionCode 4
+        versionName '4.0-android16'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
