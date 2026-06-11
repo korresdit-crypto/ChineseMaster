@@ -18,6 +18,7 @@ public class MainActivity extends Activity {
     ArrayList<Item> tones = new ArrayList<>();
     Random random = new Random();
     TextToSpeech tts;
+    SoundBank soundBank = new SoundBank();
     Item speechTarget;
     static final int SPEECH_REQ = 77;
     static class Item {
@@ -61,7 +62,7 @@ public class MainActivity extends Activity {
         base(it.symbol); TextView big=tv(it.symbol,72,android.graphics.Typeface.BOLD); big.setGravity(Gravity.CENTER_HORIZONTAL); root.addView(big);
         root.addView(tv(it.title+"\nЗначение: "+it.meaning+"\n"+it.note,20,0));
         Button listen=btn("🔊 Прослушать");
-        listen.setOnClickListener(v->speakChinese(it.symbol));
+        listen.setOnClickListener(v->playItemSound(it));
         root.addView(listen);
 
         Button mic=btn("🎤 Произнести");
@@ -77,7 +78,7 @@ public class MainActivity extends Activity {
         base("Тест"); ArrayList<Item> pool=all(); Item correct=pool.get(random.nextInt(pool.size())); root.addView(tv("Что означает: "+correct.symbol+" ?",28,android.graphics.Typeface.BOLD));
         ArrayList<Item> opts=new ArrayList<>(); opts.add(correct); while(opts.size()<4){ Item x=pool.get(random.nextInt(pool.size())); if(!opts.contains(x)) opts.add(x); } Collections.shuffle(opts);
         Button listenQuiz=btn("🔊 Прослушать вопрос");
-        listenQuiz.setOnClickListener(v->speakChinese(correct.symbol));
+        listenQuiz.setOnClickListener(v->playItemSound(correct));
         root.addView(listenQuiz);
 
         for(Item o:opts){ Button b=btn(o.meaning); b.setOnClickListener(v->{ Toast.makeText(this,o==correct?"Верно ✅":"Ошибка. Правильно: "+correct.meaning,Toast.LENGTH_LONG).show(); setStatus(correct,o==correct?"known":"hard"); showQuiz(); }); root.addView(b); }
@@ -117,15 +118,49 @@ public class MainActivity extends Activity {
         });
     }
 
+    
+    int radicalNumber(Item it) {
+        if (it == null || it.title == null) return -1;
+        try {
+            String t = it.title.replace("Ключ", "").trim();
+            return Integer.parseInt(t);
+        } catch(Exception e) {
+            return -1;
+        }
+    }
+
+    boolean isRadical(Item it) {
+        return radicalNumber(it) >= 1 && radicalNumber(it) <= 214;
+    }
+
+    void playItemSound(Item it) {
+        if (it == null) return;
+
+        int n = radicalNumber(it);
+
+        if (n >= 1 && n <= 214) {
+            soundBank.playRadical(this, n);
+            return;
+        }
+
+        speakChinese(it.symbol);
+    }
+
     void speakChinese(String text) {
+        if (soundBank != null) soundBank.stop();
         if (tts != null) {
             tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "zh");
         }
     }
 
     void practicePronunciation(Item it) {
+        if (isRadical(it)) {
+            playItemSound(it);
+            Toast.makeText(this, "Для ключей включена локальная озвучка. Голосовую проверку сделаем для слов.", Toast.LENGTH_LONG).show();
+            return;
+        }
         speechTarget = it;
-        speakChinese(it.symbol);
+        playItemSound(it);
 
         Intent intent = new
 
